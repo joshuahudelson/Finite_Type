@@ -1,0 +1,19 @@
+#N canvas 474 328 450 300 10;
+#X obj 163 125 textfile;
+#X msg 164 89 read thisisatest.txt;
+#X obj 181 39 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
+-1;
+#X obj 155 161 print left;
+#X obj 259 163 print right;
+#X msg 51 30 rewind;
+#X obj 43 148 openpanel;
+#X obj 47 107 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
+-1;
+#X obj 67 211 print panel;
+#X connect 0 0 3 0;
+#X connect 0 1 4 0;
+#X connect 1 0 0 0;
+#X connect 2 0 0 0;
+#X connect 5 0 0 0;
+#X connect 6 0 8 0;
+#X connect 7 0 6 0;
