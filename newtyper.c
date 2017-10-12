@@ -39,6 +39,29 @@ static void newtyper_callback(t_newtyper *x, t_symbol *s)
     x->myfile = sys_fopen(s->s_name, "r");
     x->first = (int) fgetc(x->myfile);
     post("This should be 32: %i", x->first);
+
+    while(1){
+      if (feof(x->myfile)){
+        break;
+      }
+      x->second = (int) fgetc(x->myfile);
+      x->bigram_table[x->first][x->second] += 1.0;
+      x->first = x->second;
+    }
+
+    for(int i=0;i<200;i++){
+      float row_sum = 0;
+      for(int j=0;j<200;j++){
+        row_sum += x->bigram_table[i][j];
+      }
+      if (row_sum != 0.0){
+        for (int k=0;k<200;k++){
+          x->bigram_table[i][k] /= row_sum;
+        }
+      }
+    }
+    post("OK!");
+    post("97-98: %f", x->bigram_table[97][115]);
 }
 
 void newtyper_setup(void) {
