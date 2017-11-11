@@ -51,15 +51,21 @@ typedef struct _newtyper{
  t_object  x_obj;
 
  t_float bigram_table[NUM_STATES][NUM_STATES];
- FILE * myfile;
- t_symbol * filepath;
- t_int first, second;                  // For counting bigrams.
+   FILE * myfile;
+   t_symbol * filepath;
+   t_int first, second;                  // For counting bigrams.
 
- t_float timings_table[NUM_STATES][NUM_STATES][MAX_NUM_TIMINGS];
- t_int timings_counter[NUM_STATES][NUM_STATES];  // total timings recorded so far.
- t_int timings_placer[NUM_STATES][NUM_STATES]; // what position to add new timing.
- t_float means[NUM_STATES][NUM_STATES];
- t_float stdevs[NUM_STATES][NUM_STATES];
+   t_float timings_table[NUM_STATES][NUM_STATES][MAX_NUM_TIMINGS];
+   t_int timings_counter[NUM_STATES][NUM_STATES];  // total timings recorded so far
+   t_int division_counter[NUM_STATES][NUM_STATES]; // amt to divide by for mean (max = NUMOBS)
+   t_float means[NUM_STATES][NUM_STATES];
+   t_float stdevs[NUM_STATES][NUM_STATES];
+
+   t_float xval, yval;
+
+   t_int obscount;
+   t_float obs[MAX_NUM_OBSERVATIONS];
+
 }t_newtyper;
 
 void * newtyper_new(void) {
@@ -72,8 +78,45 @@ void * newtyper_new(void) {
   return (void *) x;
 }
 
-void newtyper_float(t_newtyper * x, float f){
-  post("Received: %f", f);
+void newtyper_float(t_newtyper * x, float val){
+
+  if(x->xval>=0 && x->xval<NUM_STATES && x->yval>=0 && x->yval<NUM_STATES){
+  float sum = 0;
+  float sum2 = 0;
+  int i;
+
+  if(x->obscount<MAX_NUM_OBSERVATIONS){
+    x->obs[x->obscount] = val;
+    x->obscount++;
+
+    //PUT NUM IN ARRAY/UPDATE TOTAL COUNT(timetracker)/UPDATE PLACE IN ARRAY(placetracker)
+    x->timings_table[(int)x->xval][(int)x->yval][x->timings_counter[(int)x->xval][(int)x->yval]%MAX_NUM_TIMINGS] = val;
+    x->timings_counter[(int)x->xval][(int)x->yval]++;
+
+    if (x->division_counter[(int)x->xval][(int)x->yval] < MAX_NUM_TIMINGS) {
+      x->division_counter[(int)x->xval][(int)x->yval]++;
+      }
+
+  //CALCULATE MEAN
+    for (i=0;i<x->division_counter[(int)x->xval][(int)x->yval];i++){
+      sum += x->timings_table[(int)x->xval][(int)x->yval][i];
+    }
+    x->means[(int)x->xval][(int)x->yval] = sum/x->division_counter[(int)x->xval][(int)x->yval];
+
+  //CALCULATE STANDARD DEVIATION
+    for (i=0;i<x->division_counter[(int)x->xval][(int)x->yval];i++){
+    sum2 += ((x->timings_table[(int)x->xval][(int)x->yval][i] - x->means[(int)x->xval][(int)x->yval]) * (x->timings_table[(int)x->xval][(int)x->yval][i] - x->means[(int)x->xval][(int)x->yval]) );
+    }
+    sum2 = sum2 /x->division_counter[(int)x->xval][(int)x->yval];
+    x->stdevs[(int)x->xval][(int)x->yval] = sqrt(sum2);
+  }
+  else{
+   post("WORD-LENGTH MAX REACHED! (TYPER)");
+  }
+  }
+  else{
+   post("OUT OF RANGE! (PROBABLY BECAUSE OF THE 1000 TRICK TO RESET WITH SPACEBAR");
+  }
 }
 
 void do_viterbi(t_newtyper * x){
@@ -112,6 +155,8 @@ void newtyper_onbang(t_newtyper * x){
 
 
 static void newtyper_callback(t_newtyper *x, t_symbol *s){
+
+    x->obscount = 0;
     outlet_symbol(x->x_obj.ob_outlet, s);
     post("%s", s->s_name);
     x->myfile = sys_fopen(s->s_name, "r");
