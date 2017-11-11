@@ -50,14 +50,17 @@ typedef struct _newtyper{
 
  t_object  x_obj;
 
- t_float bigram_table[NUM_STATES][NUM_STATES];
+   t_float bigram_table[NUM_STATES][NUM_STATES];
    FILE * myfile;
    t_symbol * filepath;
    t_int first, second;                  // For counting bigrams.
 
+   t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES]; //TOP VITERBI PICKS
+   t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES]; //VITERBI PATH MEMORY
+
    t_float timings_table[NUM_STATES][NUM_STATES][MAX_NUM_TIMINGS];
    t_int timings_counter[NUM_STATES][NUM_STATES];  // total timings recorded so far
-   t_int division_counter[NUM_STATES][NUM_STATES]; // amt to divide by for mean (max = NUMOBS)
+   t_int division_counter[NUM_STATES][NUM_STATES]; // amt to divide by for mean (max = MAX_NUM_OBSERVATIONS)
    t_float means[NUM_STATES][NUM_STATES];
    t_float stdevs[NUM_STATES][NUM_STATES];
 
@@ -127,19 +130,60 @@ void do_viterbi(t_newtyper * x){
   holder = 0;
   zscore = 0;
 
-  // the z-score is the number (float) of stdevs away from mean.
-  // the z-table translates z-scores into percentiles.
-  // the farther from the mean a timing measurement, the less weight it should have.
-  // but zscore is signed.  So make it always positive.
-  // then get the percentile from ztable.
-  // then subtract from 1.
-  // the result, if it's perfectly on the mean, will be 0.5
-  // So translate this, I guess, by multiplying by 2
-  // Now that's the likelihood that a given timing equals some letter, given the preceding one.
+  // Initialize tops.
+  // Likelihood that a given letter will start a word = transition probability
+  // of it following a spacebar (ASCII: 32).
+  for (i=0; i<NUM_STATES; i++){
+    x->tops[0][i] = x->bigram_table[32][i];
+  }
 
-  // What is the probability that a words starts with a given letter?  Roughly the same as if it comes after a space.
-  // So table[32][a...z] gives this.
-  //
+  for(i=1;i<x->obscount;i++){
+          for(j=0;j<NUM_STATES;j++){
+                  maxnum = 0;
+                  for(k=0;k<NUM_STATES;k++){
+                      zscore = (x->obs[i] - x->means[k][j]) / x->stdevs[k][j];
+                      zscore = sqrt(zscore*zscore);
+                      zscore = ((int) (zscore * 100)) - 1;
+                      if(zscore>389){
+                          zscore = 389;
+                      }
+                      zscore = ztable[(int) zscore];
+                      // what are these doing??...
+                      // zscore = (zscore - 1) / 0.5;
+                      // zscore = sqrt(zscore*zscore);
+                      holder = x->tops[i-1][k] * x->bigram_table[k][j] * zscore;
+                      if(holder>maxnum){
+                      maxnum = holder;
+                      maxstate = k;
+                      }
+          }
+          x->tops[i][j] = maxnum;
+          x->paths[i-1][j] = maxstate;
+        }
+
+  //CHOOSE BEST PATH, WORKING BACKWARDS
+    max2 = 0;
+
+    //outlet_float(x->f_out2, x->tops[x->obscount-1][j]);
+
+    for(j=0;j<NUM_STATES;j++){
+            holder2 = x->tops[x->obscount-1][j];
+            if(holder2>max2){
+                max2 = holder2;
+                maxstate2 = j;
+         }
+    }
+
+    post("NUMBER OF LETTERS: %d", x->obscount+1);
+
+    for(i=x->obscount-1;i>=0;i--){
+        maxstate2 = x->paths[i][maxstate2];
+    }
+
+  //outlet_float(x->f_out, 2014);
+  x->obscount = 0;
+
+  }
 }
 
 
