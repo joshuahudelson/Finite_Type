@@ -1,7 +1,7 @@
-#N canvas 532 377 450 300 10;
+#N canvas 529 381 450 300 10;
 #X obj 169 90 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
 -1;
 #X obj 169 125 newtyper;
-#X msg 195 90 1;
+#X msg 195 90 1 2;
 #X connect 0 0 1 0;
 #X connect 2 0 1 0;

@@ -54,6 +54,7 @@ typedef struct _newtyper{
    FILE * myfile;
    t_symbol * filepath;
    t_int first, second;                  // For counting bigrams.
+   t_outlet * f_out, * f_out2;
 
    t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES]; //TOP VITERBI PICKS
    t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES]; //VITERBI PATH MEMORY
@@ -70,16 +71,6 @@ typedef struct _newtyper{
    t_float obs[MAX_NUM_OBSERVATIONS];
 
 }t_newtyper;
-
-void * newtyper_new(void) {
-  char buff[50];
-  t_newtyper *x = (t_newtyper *)pd_new(newtyper_class);
-  sprintf(buff, "d%lx", (t_int)x);
-  x->filepath = gensym(buff);
-  pd_bind(&x->x_obj.ob_pd, x->filepath);
-  outlet_new(&x->x_obj, &s_symbol);
-  return (void *) x;
-}
 
 void newtyper_float(t_newtyper * x, float val){
 
@@ -160,11 +151,13 @@ void do_viterbi(t_newtyper * x){
           x->tops[i][j] = maxnum;
           x->paths[i-1][j] = maxstate;
         }
+  }
 
   //CHOOSE BEST PATH, WORKING BACKWARDS
     max2 = 0;
+    maxstate2 = 0;
 
-    //outlet_float(x->f_out2, x->tops[x->obscount-1][j]);
+    outlet_float(x->f_out2, x->tops[x->obscount-1][j]);
 
     for(j=0;j<NUM_STATES;j++){
             holder2 = x->tops[x->obscount-1][j];
@@ -180,10 +173,8 @@ void do_viterbi(t_newtyper * x){
         maxstate2 = x->paths[i][maxstate2];
     }
 
-  //outlet_float(x->f_out, 2014);
+  outlet_float(x->f_out, (char) maxstate2);
   x->obscount = 0;
-
-  }
 }
 
 
@@ -232,6 +223,19 @@ static void newtyper_callback(t_newtyper *x, t_symbol *s){
 
     post("OK!");
     post("97-98: %f", x->bigram_table[115][116]);
+}
+
+void * newtyper_new(void) {
+  char buff[50];
+  t_newtyper *x = (t_newtyper *)pd_new(newtyper_class);
+  sprintf(buff, "d%lx", (t_int)x);
+  x->filepath = gensym(buff);
+  pd_bind(&x->x_obj.ob_pd, x->filepath);
+
+  x->f_out = outlet_new(&x->x_obj, &s_float);
+  x->f_out2 = outlet_new(&x->x_obj, &s_float);
+
+  return (void *) x;
 }
 
 void newtyper_setup(void) {
