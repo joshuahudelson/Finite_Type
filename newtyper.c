@@ -1,5 +1,6 @@
 #include "m_pd.h"
 #include <math.h>
+#include <time.h>
 #define NUM_STATES 127            // ASCII codes.
 #define MAX_NUM_OBSERVATIONS 20      // Maximum word length.
 #define MAX_NUM_TIMINGS 100       // Timings recorded before wrap-around.
@@ -66,50 +67,78 @@ typedef struct _newtyper{
    t_float stdevs[NUM_STATES][NUM_STATES];
 
    t_float xval, yval;
+   t_float primed;
 
    t_int obscount;
    t_float obs[MAX_NUM_OBSERVATIONS];
-
+   clock_t time_then;
 }t_newtyper;
 
-void newtyper_float(t_newtyper * x, float val){
+void newtyper_float(t_newtyper * x, float latest_input){
 
-  if(x->xval>=0 && x->xval<NUM_STATES && x->yval>=0 && x->yval<NUM_STATES){
-  float sum = 0;
-  float sum2 = 0;
-  int i;
+  // need a case for spacebar to reset numobs and the x/y vals!
 
-  if(x->obscount<MAX_NUM_OBSERVATIONS){
-    x->obs[x->obscount] = val;
-    x->obscount++;
+  float time_diff = clock_gettimesincewithunits(x->time_then, 1, 0);
+  post("time is: %f", time_diff);
 
-    //PUT NUM IN ARRAY/UPDATE TOTAL COUNT(timetracker)/UPDATE PLACE IN ARRAY(placetracker)
-    x->timings_table[(int)x->xval][(int)x->yval][x->timings_counter[(int)x->xval][(int)x->yval]%MAX_NUM_TIMINGS] = val;
-    x->timings_counter[(int)x->xval][(int)x->yval]++;
+  // if the time difference is big, restart procedure.
+  if (time_diff > 500){
+    x->time_then = clock_getsystime();
+    x->xval = latest_input;
+    x->yval = 0;
+    x->primed = 1;
+  }
+  // otherwise, check to make sure there's an xval already loaded:
+  else if (x->primed){
+    x->time_then = clock_getsystime();
 
-    if (x->division_counter[(int)x->xval][(int)x->yval] < MAX_NUM_TIMINGS) {
-      x->division_counter[(int)x->xval][(int)x->yval]++;
+    x->yval = x->xval;
+    x->xval = latest_input;
+
+    // then, as long as both values are within range:
+    if (x->xval>=0 && x->xval<NUM_STATES && x->yval>=0 && x->yval<NUM_STATES){
+      float sum = 0;
+      float sum2 = 0;
+      int i;
+
+      // and IF THE MAX WORD LENGTH HASN'T BEEN REACHED:
+      if (x->obscount<MAX_NUM_OBSERVATIONS){
+        x->obs[x->obscount] = latest_input;
+        x->obscount++;
+
+        //PUT NUM IN ARRAY/UPDATE TOTAL COUNT(timetracker)/UPDATE PLACE IN ARRAY(placetracker)
+        x->timings_table[(int)x->xval][(int)x->yval][x->timings_counter[(int)x->xval][(int)x->yval]%MAX_NUM_TIMINGS] = latest_input;
+        x->timings_counter[(int)x->xval][(int)x->yval]++;
+
+        if (x->division_counter[(int)x->xval][(int)x->yval] < MAX_NUM_TIMINGS) {
+          x->division_counter[(int)x->xval][(int)x->yval]++;
+          }
+        //CALCULATE MEAN
+        for (i=0;i<x->division_counter[(int)x->xval][(int)x->yval];i++){
+          sum += x->timings_table[(int)x->xval][(int)x->yval][i];
+        }
+
+        x->means[(int)x->xval][(int)x->yval] = sum/x->division_counter[(int)x->xval][(int)x->yval];
+
+        //CALCULATE STANDARD DEVIATION
+        for (i=0;i<x->division_counter[(int)x->xval][(int)x->yval];i++){
+        sum2 += ((x->timings_table[(int)x->xval][(int)x->yval][i] - x->means[(int)x->xval][(int)x->yval]) * (x->timings_table[(int)x->xval][(int)x->yval][i] - x->means[(int)x->xval][(int)x->yval]) );
+        }
+        sum2 = sum2 /x->division_counter[(int)x->xval][(int)x->yval];
+        x->stdevs[(int)x->xval][(int)x->yval] = sqrt(sum2);
+
+        post("everything updated");
       }
-
-  //CALCULATE MEAN
-    for (i=0;i<x->division_counter[(int)x->xval][(int)x->yval];i++){
-      sum += x->timings_table[(int)x->xval][(int)x->yval][i];
+      else{
+       post("WORD-LENGTH MAX REACHED! (TYPER)");
+      }
     }
-    x->means[(int)x->xval][(int)x->yval] = sum/x->division_counter[(int)x->xval][(int)x->yval];
-
-  //CALCULATE STANDARD DEVIATION
-    for (i=0;i<x->division_counter[(int)x->xval][(int)x->yval];i++){
-    sum2 += ((x->timings_table[(int)x->xval][(int)x->yval][i] - x->means[(int)x->xval][(int)x->yval]) * (x->timings_table[(int)x->xval][(int)x->yval][i] - x->means[(int)x->xval][(int)x->yval]) );
+    else{
+      post("OUT OF RANGE! (PROBABLY BECAUSE OF THE 1000 TRICK TO RESET WITH SPACEBAR");
     }
-    sum2 = sum2 /x->division_counter[(int)x->xval][(int)x->yval];
-    x->stdevs[(int)x->xval][(int)x->yval] = sqrt(sum2);
   }
   else{
-   post("WORD-LENGTH MAX REACHED! (TYPER)");
-  }
-  }
-  else{
-   post("OUT OF RANGE! (PROBABLY BECAUSE OF THE 1000 TRICK TO RESET WITH SPACEBAR");
+    post("somehow xval isn't primed...");
   }
 }
 
@@ -188,7 +217,6 @@ void newtyper_onbang(t_newtyper * x){
   newtyper_load(x, &s_);
 }
 
-
 static void newtyper_callback(t_newtyper *x, t_symbol *s){
 
     x->obscount = 0;
@@ -229,6 +257,10 @@ void * newtyper_new(void) {
   char buff[50];
   t_newtyper *x = (t_newtyper *)pd_new(newtyper_class);
   sprintf(buff, "d%lx", (t_int)x);
+
+  x->primed = 0;
+  x->time_then = clock_getsystime();
+
   x->filepath = gensym(buff);
   pd_bind(&x->x_obj.ob_pd, x->filepath);
 
@@ -245,9 +277,9 @@ void newtyper_setup(void) {
         0,
         0);
 
+  class_addfloat (newtyper_class, newtyper_float);
   class_addsymbol (newtyper_class, newtyper_load);
   class_addbang (newtyper_class, newtyper_onbang);
-  class_addfloat (newtyper_class, newtyper_float);
   class_addmethod(newtyper_class, (t_method)newtyper_callback,
 gensym("callback"), A_SYMBOL, 0);
 }
