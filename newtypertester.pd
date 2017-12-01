@@ -1,9 +1,19 @@
-#N canvas 523 389 450 300 10;
+#N canvas 520 393 450 300 10;
 #X obj 169 90 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
 -1;
 #X obj 169 125 newtyper;
 #X obj 242 34 key;
 #X floatatom 242 60 5 0 0 0 - - -, f 5;
+#X floatatom 136 181 5 0 0 0 - - -, f 5;
+#X floatatom 217 181 5 0 0 0 - - -, f 5;
+#X obj 107 170 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144
+-1 -1;
+#X obj 237 156 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144
+-1 -1;
 #X connect 0 0 1 0;
+#X connect 1 0 4 0;
+#X connect 1 0 6 0;
+#X connect 1 1 5 0;
+#X connect 1 1 7 0;
 #X connect 2 0 3 0;
 #X connect 3 0 1 0;

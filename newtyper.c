@@ -1,9 +1,9 @@
 #include "m_pd.h"
 #include <math.h>
 #include <time.h>
-#define NUM_STATES 127            // ASCII codes.
-#define MAX_NUM_OBSERVATIONS 20      // Maximum word length.
-#define MAX_NUM_TIMINGS 100       // Timings recorded before wrap-around.
+#define NUM_STATES            127      // ASCII codes.
+#define MAX_NUM_OBSERVATIONS   20      // Maximum word length.
+#define MAX_NUM_TIMINGS       100      // Timings recorded before wrap-around.
 
 t_float ztable[390] = {0.0000, 0.0040, 0.0080, 0.0120, 0.0160, 0.0199, 0.0239, 0.0279, 0.0319, 0.0359,
                        0.0398, 0.0438, 0.0478, 0.0517, 0.0557, 0.0596, 0.0636, 0.0675, 0.0714, 0.0753,
@@ -48,31 +48,27 @@ t_float ztable[390] = {0.0000, 0.0040, 0.0080, 0.0120, 0.0160, 0.0199, 0.0239, 0
 static t_class * newtyper_class;
 
 typedef struct _newtyper{
-
- t_object  x_obj;
-
-   t_float bigram_table[NUM_STATES][NUM_STATES];
-   FILE * myfile;
-   t_symbol * filepath;
-   t_int first, second;                  // For counting bigrams.
-   t_outlet * f_out, * f_out2;
-
-   t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES]; //TOP VITERBI PICKS
-   t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES]; //VITERBI PATH MEMORY
-
-   t_float timings_table[NUM_STATES][NUM_STATES][MAX_NUM_TIMINGS];
-   t_int timings_counter[NUM_STATES][NUM_STATES];  // total timings recorded so far
-   t_int division_counter[NUM_STATES][NUM_STATES]; // amt to divide by for mean (max = MAX_NUM_OBSERVATIONS)
-   t_float means[NUM_STATES][NUM_STATES];
-   t_float stdevs[NUM_STATES][NUM_STATES];
-
-   t_float xval, yval;
-   t_float primed;
-
-   t_int obscount;
-   t_float obs[MAX_NUM_OBSERVATIONS];
-   clock_t time_then;
+  t_object  x_obj;
+  t_float bigram_table[NUM_STATES][NUM_STATES];
+  FILE * myfile;
+  t_symbol * filepath;
+  t_int first, second;                  // For counting bigrams.
+  t_outlet * f_out, * f_out2;
+  t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES]; //TOP VITERBI PICKS
+  t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES]; //VITERBI PATH MEMORY
+  t_float timings_table[NUM_STATES][NUM_STATES][MAX_NUM_TIMINGS];
+  t_int timings_counter[NUM_STATES][NUM_STATES];  // total timings recorded so far
+  t_int division_counter[NUM_STATES][NUM_STATES]; // amt to divide by for mean (max = MAX_NUM_OBSERVATIONS)
+  t_float means[NUM_STATES][NUM_STATES];
+  t_float stdevs[NUM_STATES][NUM_STATES];
+  t_float xval, yval;
+  t_float primed;
+  t_int obscount;
+  t_float obs[MAX_NUM_OBSERVATIONS];
+  clock_t time_then;
 }t_newtyper;
+
+void newtyper_viterbi(t_newtyper * x);
 
 void newtyper_float(t_newtyper * x, float latest_input){
 
@@ -113,6 +109,7 @@ void newtyper_float(t_newtyper * x, float latest_input){
         if (x->division_counter[(int)x->xval][(int)x->yval] < MAX_NUM_TIMINGS) {
           x->division_counter[(int)x->xval][(int)x->yval]++;
           }
+
         //CALCULATE MEAN
         for (i=0;i<x->division_counter[(int)x->xval][(int)x->yval];i++){
           sum += x->timings_table[(int)x->xval][(int)x->yval][i];
@@ -128,6 +125,10 @@ void newtyper_float(t_newtyper * x, float latest_input){
         x->stdevs[(int)x->xval][(int)x->yval] = sqrt(sum2);
 
         post("everything updated");
+        if ((int)latest_input == 32){
+          post("spacebar!");
+          newtyper_viterbi(x);
+        }
       }
       else{
        post("WORD-LENGTH MAX REACHED! (TYPER)");
@@ -142,7 +143,7 @@ void newtyper_float(t_newtyper * x, float latest_input){
   }
 }
 
-void do_viterbi(t_newtyper * x){
+void newtyper_viterbi(t_newtyper * x){
   int i, j, k, maxstate, maxstate2; //maxstate2 is used to track the best viterbi path backwards
   float holder, maxnum, holder2, max2, zscore;
   maxnum = 0;
@@ -199,7 +200,9 @@ void do_viterbi(t_newtyper * x){
     post("NUMBER OF LETTERS: %d", x->obscount+1);
 
     for(i=x->obscount-1;i>=0;i--){
-        maxstate2 = x->paths[i][maxstate2];
+      post("LETTER: %c", x->paths[i][maxstate2]);
+      outlet_float(x->x_obj.ob_outlet, (char) x->paths[i][maxstate2]);
+      maxstate2 = x->paths[i][maxstate2];
     }
 
   outlet_float(x->f_out, (char) maxstate2);
@@ -280,6 +283,6 @@ void newtyper_setup(void) {
   class_addfloat (newtyper_class, newtyper_float);
   class_addsymbol (newtyper_class, newtyper_load);
   class_addbang (newtyper_class, newtyper_onbang);
-  class_addmethod(newtyper_class, (t_method)newtyper_callback,
-gensym("callback"), A_SYMBOL, 0);
+  class_addmethod(newtyper_class, (t_method)newtyper_callback, gensym("callback"), A_SYMBOL, 0);
+  class_addmethod(newtyper_class,(t_method)newtyper_viterbi, gensym("viterbi"), 0);
 }
