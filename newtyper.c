@@ -68,7 +68,73 @@ typedef struct _newtyper{
   clock_t time_then;
 }t_newtyper;
 
-void newtyper_viterbi(t_newtyper * x);
+//void newtyper_viterbi(t_newtyper * x);
+
+void newtyper_viterbi(t_newtyper * x){
+  int i, j, k, maxstate, maxstate2; //maxstate2 is used to track the best viterbi path backwards
+  float holder, maxnum, holder2, max2, zscore;
+  maxnum = 0;
+  maxstate = 0;
+  holder = 0;
+  zscore = 0;
+
+  // Initialize tops.
+  // Likelihood that a given letter will start a word = transition probability
+  // of it following a spacebar (ASCII: 32).
+  for (i=0; i<NUM_STATES; i++){
+    x->tops[0][i] = x->bigram_table[32][i];
+  }
+
+  for(i=1;i<x->obscount;i++){
+          for(j=0;j<NUM_STATES;j++){
+                  maxnum = 0;
+                  for(k=0;k<NUM_STATES;k++){
+                      zscore = (x->obs[i] - x->means[k][j]) / x->stdevs[k][j];
+                      zscore = sqrt(zscore*zscore);
+                      zscore = ((int) (zscore * 100)) - 1;
+                      if(zscore>389){
+                          zscore = 389;
+                      }
+                      zscore = ztable[(int) zscore];
+                      // what are these doing??...
+                      // zscore = (zscore - 1) / 0.5;
+                      // zscore = sqrt(zscore*zscore);
+                      holder = x->tops[i-1][k] * x->bigram_table[k][j] * zscore;
+                      if(holder>maxnum){
+                      maxnum = holder;
+                      maxstate = k;
+                      }
+          }
+          x->tops[i][j] = maxnum;
+          x->paths[i-1][j] = maxstate;
+        }
+  }
+
+  //CHOOSE BEST PATH, WORKING BACKWARDS
+    max2 = 0;
+    maxstate2 = 0;
+
+    outlet_float(x->f_out2, x->tops[x->obscount-1][j]);
+
+    for(j=0;j<NUM_STATES;j++){
+            holder2 = x->tops[x->obscount-1][j];
+            if(holder2>max2){
+                max2 = holder2;
+                maxstate2 = j;
+         }
+    }
+
+    post("NUMBER OF LETTERS: %d", x->obscount+1);
+
+    for(i=x->obscount-1;i>=0;i--){
+      post("LETTER: %c", x->paths[i][maxstate2]);
+      outlet_float(x->x_obj.ob_outlet, (char) x->paths[i][maxstate2]);
+      maxstate2 = x->paths[i][maxstate2];
+    }
+
+  outlet_float(x->f_out, (char) maxstate2);
+  x->obscount = 0;
+}
 
 void newtyper_float(t_newtyper * x, float latest_input){
 
@@ -141,72 +207,6 @@ void newtyper_float(t_newtyper * x, float latest_input){
   else{
     post("somehow xval isn't primed...");
   }
-}
-
-void newtyper_viterbi(t_newtyper * x){
-  int i, j, k, maxstate, maxstate2; //maxstate2 is used to track the best viterbi path backwards
-  float holder, maxnum, holder2, max2, zscore;
-  maxnum = 0;
-  maxstate = 0;
-  holder = 0;
-  zscore = 0;
-
-  // Initialize tops.
-  // Likelihood that a given letter will start a word = transition probability
-  // of it following a spacebar (ASCII: 32).
-  for (i=0; i<NUM_STATES; i++){
-    x->tops[0][i] = x->bigram_table[32][i];
-  }
-
-  for(i=1;i<x->obscount;i++){
-          for(j=0;j<NUM_STATES;j++){
-                  maxnum = 0;
-                  for(k=0;k<NUM_STATES;k++){
-                      zscore = (x->obs[i] - x->means[k][j]) / x->stdevs[k][j];
-                      zscore = sqrt(zscore*zscore);
-                      zscore = ((int) (zscore * 100)) - 1;
-                      if(zscore>389){
-                          zscore = 389;
-                      }
-                      zscore = ztable[(int) zscore];
-                      // what are these doing??...
-                      // zscore = (zscore - 1) / 0.5;
-                      // zscore = sqrt(zscore*zscore);
-                      holder = x->tops[i-1][k] * x->bigram_table[k][j] * zscore;
-                      if(holder>maxnum){
-                      maxnum = holder;
-                      maxstate = k;
-                      }
-          }
-          x->tops[i][j] = maxnum;
-          x->paths[i-1][j] = maxstate;
-        }
-  }
-
-  //CHOOSE BEST PATH, WORKING BACKWARDS
-    max2 = 0;
-    maxstate2 = 0;
-
-    outlet_float(x->f_out2, x->tops[x->obscount-1][j]);
-
-    for(j=0;j<NUM_STATES;j++){
-            holder2 = x->tops[x->obscount-1][j];
-            if(holder2>max2){
-                max2 = holder2;
-                maxstate2 = j;
-         }
-    }
-
-    post("NUMBER OF LETTERS: %d", x->obscount+1);
-
-    for(i=x->obscount-1;i>=0;i--){
-      post("LETTER: %c", x->paths[i][maxstate2]);
-      outlet_float(x->x_obj.ob_outlet, (char) x->paths[i][maxstate2]);
-      maxstate2 = x->paths[i][maxstate2];
-    }
-
-  outlet_float(x->f_out, (char) maxstate2);
-  x->obscount = 0;
 }
 
 
