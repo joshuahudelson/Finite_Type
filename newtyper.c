@@ -87,9 +87,14 @@ void newtyper_viterbi(t_newtyper * x){
     x->tops[0][i] = x->bigram_table[32][i];
   }
 
-  // Iterate through pairs of key states, use the timing to calculate the zscore.
-  // holder: the total likelihood for this pair of keys.
-  // But how does viterbi path memory work?
+  /* Iterate through pairs of key states, use the timing to calculate the zscore.
+     "holder": the total likelihood for a given pair of keys.
+     "maxnum": the max holder of a set of transitions.
+     "maxstate": the second key that produced the maxnum transition.
+     x->tops: the best possible transition probabilities for timing/transitions.
+     x->paths: the keys that produced the best transitions.
+  */
+
   for(i=1;i<x->obscount;i++){
           for(j=0;j<NUM_STATES;j++){
                   maxnum = 0;
@@ -112,25 +117,31 @@ void newtyper_viterbi(t_newtyper * x){
         }
   }
 
-
-  //CHOOSE BEST PATH, WORKING BACKWARDS
+  /*  Whichever row in the last column of x->paths is highest is the row that
+      is the highest likelihood path of the observations.  So find it.
+  */
     max2 = 0;
     maxstate2 = 0;
 
     outlet_float(x->f_out2, x->tops[x->obscount-1][j]);
 
-    for(j=0;j<NUM_STATES;j++){
-            holder2 = x->tops[x->obscount-1][j];
-            if(holder2>max2){
-                max2 = holder2;
-                maxstate2 = j;
-         }
+    for(j=0; j<NUM_STATES; j++)
+    {
+      holder2 = x->tops[x->obscount-1][j];
+      if(holder2>max2)
+      {
+        max2 = holder2;
+        maxstate2 = j;
+      }
     }
 
     post("NUMBER OF LETTERS: %d", x->obscount+1);
 
+    // Then iterate through the whole path row from beginning to end and
+    // print the character-translation of the states.
+
     for(i=x->obscount-1;i>=0;i--){
-      post("LETTER: %c", x->paths[i][maxstate2]);
+      post("LETTER: %c", (char) x->paths[i][maxstate2]);
       outlet_float(x->x_obj.ob_outlet, (char) x->paths[i][maxstate2]);
       maxstate2 = x->paths[i][maxstate2];
     }
@@ -138,6 +149,7 @@ void newtyper_viterbi(t_newtyper * x){
   outlet_float(x->f_out, (char) maxstate2);
   x->obscount = 0;
 }
+
 
 void newtyper_float(t_newtyper * x, float latest_input){
 
