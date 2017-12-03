@@ -52,13 +52,13 @@ typedef struct _newtyper{
   t_float bigram_table[NUM_STATES][NUM_STATES];
   FILE * myfile;
   t_symbol * filepath;
-  t_int first, second;                  // For counting bigrams.
+  t_int first, second;                                   // For counting bigrams.
   t_outlet * f_out, * f_out2;
-  t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES]; //TOP VITERBI PICKS
-  t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES]; //VITERBI PATH MEMORY
+  t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES];        //TOP VITERBI PICKS
+  t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES];       //VITERBI PATH MEMORY
   t_float timings_table[NUM_STATES][NUM_STATES][MAX_NUM_TIMINGS];
-  t_int timings_counter[NUM_STATES][NUM_STATES];  // total timings recorded so far
-  t_int division_counter[NUM_STATES][NUM_STATES]; // amt to divide by for mean (max = MAX_NUM_OBSERVATIONS)
+  t_int timings_counter[NUM_STATES][NUM_STATES];         // num timings recorded so far
+  t_int division_counter[NUM_STATES][NUM_STATES];        // amt to divide by for mean (max = MAX_NUM_OBSERVATIONS)
   t_float means[NUM_STATES][NUM_STATES];
   t_float stdevs[NUM_STATES][NUM_STATES];
   t_float xval, yval;
@@ -68,23 +68,28 @@ typedef struct _newtyper{
   clock_t time_then;
 }t_newtyper;
 
-//void newtyper_viterbi(t_newtyper * x);
-
 void newtyper_viterbi(t_newtyper * x){
-  int i, j, k, maxstate, maxstate2; //maxstate2 is used to track the best viterbi path backwards
+
+  int i, j, k;
+  int maxstate, maxstate2;                      //maxstate2 is used to track the best viterbi path backwards
   float holder, maxnum, holder2, max2, zscore;
+
   maxnum = 0;
   maxstate = 0;
   holder = 0;
   zscore = 0;
 
   // Initialize tops.
-  // Likelihood that a given letter will start a word = transition probability
-  // of it following a spacebar (ASCII: 32).
+  // Likelihood that a given letter will start a word =
+  // transition probability of it following a spacebar (ASCII: 32).
+
   for (i=0; i<NUM_STATES; i++){
     x->tops[0][i] = x->bigram_table[32][i];
   }
 
+  // Iterate through pairs of key states, use the timing to calculate the zscore.
+  // holder: the total likelihood for this pair of keys.
+  // But how does viterbi path memory work?
   for(i=1;i<x->obscount;i++){
           for(j=0;j<NUM_STATES;j++){
                   maxnum = 0;
@@ -96,9 +101,6 @@ void newtyper_viterbi(t_newtyper * x){
                           zscore = 389;
                       }
                       zscore = ztable[(int) zscore];
-                      // what are these doing??...
-                      // zscore = (zscore - 1) / 0.5;
-                      // zscore = sqrt(zscore*zscore);
                       holder = x->tops[i-1][k] * x->bigram_table[k][j] * zscore;
                       if(holder>maxnum){
                       maxnum = holder;
@@ -109,6 +111,7 @@ void newtyper_viterbi(t_newtyper * x){
           x->paths[i-1][j] = maxstate;
         }
   }
+
 
   //CHOOSE BEST PATH, WORKING BACKWARDS
     max2 = 0;
