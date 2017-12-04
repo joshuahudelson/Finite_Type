@@ -49,16 +49,18 @@ static t_class * newtyper_class;
 
 typedef struct _newtyper{
   t_object  x_obj;
-  t_float bigram_table[NUM_STATES][NUM_STATES];
+  t_outlet * f_out, * f_out2;
+
+  t_float bigram_table[NUM_STATES][NUM_STATES];   // transition probabilities.
   FILE * myfile;
   t_symbol * filepath;
-  t_int first, second;                                   // For counting bigrams.
-  t_outlet * f_out, * f_out2;
-  t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES];        //TOP VITERBI PICKS
-  t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES];       //VITERBI PATH MEMORY
+  t_int first_letter, second_letter;              // tallying bigrams in text file.
+
+  t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES];    // highest viterbi scores
+  t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES];   // keys of higest scores
   t_float timings_table[NUM_STATES][NUM_STATES][MAX_NUM_TIMINGS];
-  t_int timings_counter[NUM_STATES][NUM_STATES];         // num timings recorded so far
-  t_int division_counter[NUM_STATES][NUM_STATES];        // amt to divide by for mean (max = MAX_NUM_OBSERVATIONS)
+  t_int timings_counter[NUM_STATES][NUM_STATES];     // num timings recorded so far
+  t_int division_counter[NUM_STATES][NUM_STATES];    // timings denominator for mean (max = MAX_NUM_TIMINGS)
   t_float means[NUM_STATES][NUM_STATES];
   t_float stdevs[NUM_STATES][NUM_STATES];
   t_float xval, yval;
@@ -145,12 +147,14 @@ void newtyper_viterbi(t_newtyper * x){
 
     for(i=x->obscount-1;i>=0;i--){
       post("LETTER: %c", (char) x->paths[i][maxstate2]);
+      post("float: %f", x->tops[i][maxstate2]);
       outlet_float(x->x_obj.ob_outlet, (char) x->paths[i][maxstate2]);
       maxstate2 = x->paths[i][maxstate2];
     }
 
     for(i=x->obscount-1;i>=0;i--){
       post("LETTER2: %c", (char) x->paths[i][maxstate3]);
+      post("float: %f", x->tops[i][maxstate3]);
       maxstate3 = x->paths[i][maxstate3];
     }
 
@@ -249,16 +253,16 @@ static void newtyper_callback(t_newtyper *x, t_symbol *s){
     outlet_symbol(x->x_obj.ob_outlet, s);
     post("%s", s->s_name);
     x->myfile = sys_fopen(s->s_name, "r");
-    x->first = (int) fgetc(x->myfile);
-    post("This should be 32: %i", x->first);
+    x->first_letter = (int) fgetc(x->myfile);
+    post("This should be 32: %i", x->first_letter);
 
     while(1){
       if (feof(x->myfile)){
         break;
       }
-      x->second = (int) fgetc(x->myfile);
-      x->bigram_table[x->first][x->second] += 1.0;
-      x->first = x->second;
+      x->second_letter = (int) fgetc(x->myfile);
+      x->bigram_table[x->first_letter][x->second_letter] += 1.0;
+      x->first_letter = x->second_letter;
     }
 
     post("How many s to t's: %f", x->bigram_table[115][116]);
