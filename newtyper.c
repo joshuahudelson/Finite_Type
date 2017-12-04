@@ -77,6 +77,7 @@ void newtyper_viterbi(t_newtyper * x){
   maxnum = 0;
   maxstate = 0;
   holder = 0;
+  holder2 = 0;
   zscore = 0;
 
   // Initialize tops.
@@ -122,6 +123,7 @@ void newtyper_viterbi(t_newtyper * x){
   */
     max2 = 0;
     maxstate2 = 0;
+    int maxstate3 = 0;
 
     outlet_float(x->f_out2, x->tops[x->obscount-1][j]);
 
@@ -131,6 +133,7 @@ void newtyper_viterbi(t_newtyper * x){
       if(holder2>max2)
       {
         max2 = holder2;
+        maxstate3 = maxstate2;
         maxstate2 = j;
       }
     }
@@ -144,6 +147,11 @@ void newtyper_viterbi(t_newtyper * x){
       post("LETTER: %c", (char) x->paths[i][maxstate2]);
       outlet_float(x->x_obj.ob_outlet, (char) x->paths[i][maxstate2]);
       maxstate2 = x->paths[i][maxstate2];
+    }
+
+    for(i=x->obscount-1;i>=0;i--){
+      post("LETTER2: %c", (char) x->paths[i][maxstate3]);
+      maxstate3 = x->paths[i][maxstate3];
     }
 
   outlet_float(x->f_out, (char) maxstate2);
