@@ -63,7 +63,7 @@ typedef struct _newtyper{
   t_int division_counter[NUM_STATES][NUM_STATES];    // timings denominator for mean (max = MAX_NUM_TIMINGS)
   t_float means[NUM_STATES][NUM_STATES];
   t_float stdevs[NUM_STATES][NUM_STATES];
-  t_float key1, key2;
+  t_int key1, key2;
   t_float primed;
 
   t_int obscount;                                    // how many letters in typed word made so far
@@ -178,13 +178,13 @@ void newtyper_float(t_newtyper * x, float latest_input){
     }
   // if first key hasn't been pressed, record it.
   else if (x->key2 == 127){
-    x->key2 = latest_input;
+    x->key2 = (t_int) latest_input;
     x->time_then = clock_getsystime();
   }
   else {
 
     x->key1 = x->key2;
-    x->key2 = latest_input;
+    x->key2 = (t_int) latest_input;
 
     float sum1 = 0;
     float sum2 = 0;
@@ -201,34 +201,32 @@ void newtyper_float(t_newtyper * x, float latest_input){
       x->obscount++;
 
       // put new timing value at next location in timings_table, update location tracker.
-      int index_to_update = x->timings_counter[(int) x->key1][(int) x->key2] % MAX_NUM_TIMINGS;
-      x->timings_table[(int) x->key1][(int) x->key2][index_to_update] = latest_input;
-      x->timings_counter[(int)x->key1][(int)x->key2]++;
+      int index_to_update = x->timings_counter[x->key1][x->key2] % MAX_NUM_TIMINGS;
+      x->timings_table[x->key1][x->key2][index_to_update] = time_diff;
+      x->timings_counter[x->key1][x->key2]++;
 
-      // divide by the number of timings_table entries that are full (max = MAX_NUM_TIMINGS)
-      // note that this isn't the same as total number received (timings_counter), which is
-      // theoretically infinite.
-      if (x->division_counter[(int)x->key1][(int)x->key2] < MAX_NUM_TIMINGS) {
-        x->division_counter[(int)x->key1][(int)x->key2]++;
-        }
+      // increment division_counter (used for calculating mean)
+      if (x->division_counter[x->key1][x->key2] < MAX_NUM_TIMINGS) {
+        x->division_counter[x->key1][x->key2]++;
+      }
 
       // calculate the mean of the timings for the pair of keys.
-      for (i=0; i<x->division_counter[(int)x->key1][(int)x->key2]; i++){
-        sum1 += x->timings_table[(int)x->key1][(int)x->key2][i];
+      for (i=0; i < x->division_counter[x->key1][x->key2]; i++){
+        sum1 += x->timings_table[x->key1][x->key2][i];
       }
-      temp_mean = sum1/x->division_counter[(int)x->key1][(int)x->key2];
-      x->means[(int)x->key1][(int)x->key2] = temp_mean;
+      temp_mean = sum1 / x->division_counter[x->key1][x->key2];
+      x->means[x->key1][x->key2] = temp_mean;
 
       // calculate the standard deviation.
-      for (i=0; i<x->division_counter[(int)x->key1][(int)x->key2]; i++){
-        float temp_difference = (x->timings_table[(int)x->key1][(int)x->key2][i] - x->means[(int)x->key1][(int)x->key2]);
+      for (i=0; i<x->division_counter[x->key1][x->key2]; i++){
+        float temp_difference = (x->timings_table[x->key1][x->key2][i] - x->means[x->key1][x->key2]);
         sum2 += temp_difference * temp_difference;
       }
-      sum2 = sum2 / x->division_counter[(int)x->key1][(int)x->key2];
+      sum2 = sum2 / x->division_counter[x->key1][x->key2];
       temp_stdev = sqrt(sum2);
-      x->stdevs[(int) x->key1][(int) x->key2] = temp_stdev;
+      x->stdevs[x->key1][x->key2] = temp_stdev;
 
-      post("%c to %c: %f ms, %f mean, %f stdev.", (int) x->key1, (int) x->key2, time_diff, temp_mean, temp_stdev);
+      post("%i to %i: %f ms, %f mean, %f stdev.", x->key1, x->key2, time_diff, temp_mean, temp_stdev);
 
       x->time_then = clock_getsystime();
     }
@@ -298,6 +296,19 @@ void * newtyper_new(void) {
 
   x->key1 = 127;
   x->key2 = 127;
+
+  // initialize all table values to zero.
+  for (int i=0; i<NUM_STATES; i++){
+    for (int j=0; j<NUM_STATES; j++){
+      x->timings_counter[i][j] = 0;
+      x->division_counter[i][j] = 0;
+      x->means[i][j] = 0;
+      x->stdevs[i][j] = 0;
+      for (int k=0; k<MAX_NUM_TIMINGS; k++){
+        x->timings_table[i][j][k] = 0;
+      }
+    }
+  }
 
   return (void *) x;
 }
