@@ -95,9 +95,11 @@ void newtyper_stdev(t_newtyper * x){
   }
   sum2 = sum2 / (x->division_counter[x->from_key][x->to_key] - 1);
   float temp_stdev = sqrt(sum2);
+  if (temp_stdev <= 0){
+    temp_stdev = 10;
+  }
   x->stdevs[x->from_key][x->to_key] = temp_stdev;
 }
-
 
 void newtyper_viterbi(t_newtyper * x){
 
@@ -130,10 +132,14 @@ void newtyper_viterbi(t_newtyper * x){
         float zscore = (x->obs[observation] - x->means[saved_letter_one][potential_letter_two]) / x->stdevs[saved_letter_one][potential_letter_two];
         zscore = abs(zscore);
         zscore = ((int) (zscore * 100)) - 1;
-        post("zscore times 100: %f", zscore);
         if(zscore > 389){
           zscore = 389;
+          post("Too big!");
         }
+        if (zscore < 0){
+          zscore = 150;
+        }
+
         // if zscore is zero, then it's zero stdevs away from mean, so it's good.
         zscore = ztable[(int) zscore];
         zscore = abs((zscore - 0.5));
@@ -255,40 +261,53 @@ void newtyper_onbang(t_newtyper * x){
 }
 
 static void newtyper_callback(t_newtyper *x, t_symbol *s){
+  // load textfile and extract bigram frequencies.
 
-    x->obscount = 0;
-    outlet_symbol(x->x_obj.ob_outlet, s);
-    post("%s", s->s_name);
-    x->myfile = sys_fopen(s->s_name, "r");
-    x->first_letter = (int) fgetc(x->myfile);
-    post("This should be 32: %i", x->first_letter);
+  outlet_symbol(x->x_obj.ob_outlet, s);
+  x->myfile = sys_fopen(s->s_name, "r");
+  post("%s", s->s_name);
 
-    while(1){
-      if (feof(x->myfile)){
-        break;
-      }
-      x->second_letter = (int) fgetc(x->myfile);
-      x->bigram_count_table[x->first_letter][x->second_letter] += 1.0;
-      x->first_letter = x->second_letter;
+  // prime the pump with first letter.
+  x->first_letter = (int) fgetc(x->myfile);
+  post("This is the first letter: %i / %c", x->first_letter, x->first_letter);
+
+  // go through rest of letters and count bigram frequencies.
+  while(1){
+    if (feof(x->myfile)){
+      break;
     }
+    x->second_letter = (int) fgetc(x->myfile);
+    x->bigram_count_table[x->first_letter][x->second_letter] += 1.0;
+    x->first_letter = x->second_letter;
+  }
 
-    post("How many s to t's: %f", x->bigram_table[115][116]);
+  post("# of s to t: %f", x->bigram_table[((int) 's')][((int) 't')]);
 
-    for(int i=0;i<NUM_STATES;i++){
-      float row_sum = 0;
-      for(int j=0;j<NUM_STATES;j++){
-        row_sum += x->bigram_count_table[i][j];
-      }
-      if ( (int) row_sum != 0){
-        for (int k=0;k<NUM_STATES;k++){
-          x->bigram_table[i][k] = x->bigram_count_table[i][k]/row_sum;
-        }
+  int row_sum;
+
+  // count total transitions per starting letter and normalize each transition.
+  for(int i=0; i<NUM_STATES; i++){
+    row_sum = 0;
+    for(int j=0;j<NUM_STATES;j++){
+      row_sum += x->bigram_count_table[i][j];
+    }
+    post("row sum for %c: %i", i, row_sum );
+    if (row_sum != 0){
+      for (int k=0;k<NUM_STATES;k++){
+        x->bigram_table[i][k] = x->bigram_count_table[i][k] / (float) row_sum;
       }
     }
+  }
+  post("Transition probability for s to t: %f", x->bigram_table[((int) 's')][((int) 't')]);
 
-    post("OK!");
-    post("97-98: %f", x->bigram_table[115][116]);
+  float row_sum2 = 0;
+
+  for (int i=0; i<NUM_STATES; i++){
+    row_sum2 += x->bigram_table[((int) 's')][i];
+  }
+  post("Sum of transition probabilities for bigrams starting with 's': %f", row_sum2);
 }
+
 
 void * newtyper_new(void) {
   char buff[50];
