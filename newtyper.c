@@ -66,7 +66,7 @@ typedef struct _newtyper{
   t_float means[NUM_STATES][NUM_STATES];
   t_float stdevs[NUM_STATES][NUM_STATES];
   t_int from_key, to_key;
-  t_float primed;
+  t_int key_1_full;
 
   t_int obscount;                                    // how many letters in typed word made so far
   t_float obs[MAX_NUM_OBSERVATIONS];                 // the timing of the letter in typed word
@@ -190,62 +190,58 @@ void newtyper_float(t_newtyper * x, float latest_input){
 
   float time_diff = clock_gettimesincewithunits(x->time_then, 1, 0);
 
+  if (time_diff > 800){
+    x->time_then = clock_getsystime();
+    x->obscount = 0;
+  }
+
   if ( (latest_input >= NUM_STATES) | (latest_input < 0) ){
     post("Input out of range!");
   }
-  // if input is spacebar, do viterbi and reset key values.
-  else if ( (int) latest_input == 32){
-      post("--word finished --");
-      newtyper_viterbi(x);
-      x->to_key = 127;
-      x->from_key = 127;
-      x->time_then = clock_getsystime();
+  else if ((int) latest_input == 32){
+    post("Word finished.");
+    newtyper_viterbi(x);
+    x->key_1_full = 0;
+    x->obscount = 0;
   }
-  // if the time difference is big, or no key1 value, record new key1 and reset
-  // key2 to 127 (outside NUM_STATES range)
-  else if (time_diff > 800){
-    x->time_then = clock_getsystime();
-    x->to_key = 127;
+  else if (x->key_1_full == 0){
     x->from_key = latest_input;
-  }
-  // if first key hasn't been pressed, record it.
-  else if (x->from_key == 127){
-    x->from_key = (t_int) latest_input;
     x->time_then = clock_getsystime();
+    x->obscount = 0; // maybe unnecessary, but just to be safe...
+    x->key_1_full = 1;
   }
-  // when after the first letter of a word.
-  else {
+  else{
+    post("We doing this?");
+    x->obs[x->obscount] = time_diff;  // record timing observation
+    x->to_key = latest_input;
+    // put new timing value at next location in timings_table, update location tracker.
+    int index_to_update = x->timings_counter[x->from_key][x->to_key] % MAX_NUM_TIMINGS;
+    x->timings_table[x->from_key][x->to_key][index_to_update] = time_diff;
+    x->timings_counter[x->from_key][x->to_key]++;
+    // increment division_counter (used for calculating mean)
+    if (x->division_counter[x->from_key][x->to_key] < MAX_NUM_TIMINGS) {
+      x->division_counter[x->from_key][x->to_key]++;
+    }
 
-    x->to_key = (t_int) latest_input;
+    newtyper_mean(x);
+    newtyper_stdev(x);
+
+    post("%c to %c: %f ms, %f mean, %f stdev.", x->from_key, x->to_key, time_diff,
+    x->means[x->from_key][x->to_key], x->stdevs[x->from_key][x->to_key]);
+
+    x->time_then = clock_getsystime();
+
+    x->from_key = x->to_key;
 
     if (x->obscount >= MAX_NUM_OBSERVATIONS){
       post("Maximum number of letters reached!");
+      newtyper_viterbi(x);
+      x->key_1_full = 0;
+      x->obscount = 0;
     }
-    else {
-
-      x->obs[x->obscount] = latest_input;
+    else{
       x->obscount++;
-
-      // put new timing value at next location in timings_table, update location tracker.
-      int index_to_update = x->timings_counter[x->from_key][x->to_key] % MAX_NUM_TIMINGS;
-      x->timings_table[x->from_key][x->to_key][index_to_update] = time_diff;
-      x->timings_counter[x->from_key][x->to_key]++;
-
-      // increment division_counter (used for calculating mean)
-      if (x->division_counter[x->from_key][x->to_key] < MAX_NUM_TIMINGS) {
-        x->division_counter[x->from_key][x->to_key]++;
-      }
-
-      newtyper_mean(x);
-
-      newtyper_stdev(x);
-
-      post("%c to %c: %f ms, %f mean, %f stdev.", x->from_key, x->to_key, time_diff,
-      x->means[x->from_key][x->to_key], x->stdevs[x->from_key][x->to_key]);
-
-      x->time_then = clock_getsystime();
     }
-  x->from_key = x->to_key;
   }
 }
 
@@ -314,7 +310,6 @@ void * newtyper_new(void) {
   t_newtyper *x = (t_newtyper *)pd_new(newtyper_class);
   sprintf(buff, "d%lx", (t_int)x);
 
-  x->primed = 0;
   x->time_then = clock_getsystime();
 
   x->filepath = gensym(buff);
@@ -325,6 +320,8 @@ void * newtyper_new(void) {
 
   x->from_key = 127;
   x->to_key = 127;
+
+  x->key_1_full = 0;
 
   // initialize all table values to zero.
   for (int i=0; i<NUM_STATES; i++){
