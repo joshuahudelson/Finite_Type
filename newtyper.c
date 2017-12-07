@@ -1,6 +1,7 @@
 #include "m_pd.h"
 #include <math.h>
 #include <time.h>
+#include <stdlib.h>
 #define NUM_STATES            127      // ASCII codes.
 #define MAX_NUM_OBSERVATIONS   20      // Maximum word length.
 #define MAX_NUM_TIMINGS       100      // Timings recorded before wrap-around.
@@ -51,109 +52,133 @@ typedef struct _newtyper{
   t_object  x_obj;
   t_outlet * f_out, * f_out2;
 
+  t_int bigram_count_table[NUM_STATES][NUM_STATES];
   t_float bigram_table[NUM_STATES][NUM_STATES];   // transition probabilities.
   FILE * myfile;
   t_symbol * filepath;
   t_int first_letter, second_letter;              // tallying bigrams in text file.
 
   t_float tops[MAX_NUM_OBSERVATIONS][NUM_STATES];    // highest viterbi scores
-  t_int paths[MAX_NUM_OBSERVATIONS-1][NUM_STATES];   // keys of higest scores
+  t_int paths[MAX_NUM_OBSERVATIONS][NUM_STATES];   // keys of higest scores
   t_float timings_table[NUM_STATES][NUM_STATES][MAX_NUM_TIMINGS];
   t_int timings_counter[NUM_STATES][NUM_STATES];     // num timings recorded so far
   t_int division_counter[NUM_STATES][NUM_STATES];    // timings denominator for mean (max = MAX_NUM_TIMINGS)
   t_float means[NUM_STATES][NUM_STATES];
   t_float stdevs[NUM_STATES][NUM_STATES];
-  t_int key1, key2;
+  t_int from_key, to_key;
   t_float primed;
 
   t_int obscount;                                    // how many letters in typed word made so far
-  t_float obs[MAX_NUM_OBSERVATIONS];                 // the letters in typed word
+  t_float obs[MAX_NUM_OBSERVATIONS];                 // the timing of the letter in typed word
 
   clock_t time_then;
 }t_newtyper;
 
+
+void newtyper_mean(t_newtyper * x){
+  // calculate the mean of the timings for the pair of keys.
+  int sum1 = 0;
+  for (int i=0; i < x->division_counter[x->from_key][x->to_key]; i++){
+    sum1 += x->timings_table[x->from_key][x->to_key][i];
+  }
+  float temp_mean = sum1 / x->division_counter[x->from_key][x->to_key];
+  x->means[x->from_key][x->to_key] = temp_mean;
+}
+
+
+void newtyper_stdev(t_newtyper * x){
+  // calculate the standard deviation.
+  float sum2 = 0;
+  for (int i=0; i<x->division_counter[x->from_key][x->to_key]; i++){
+    float temp_difference = (x->timings_table[x->from_key][x->to_key][i] - x->means[x->from_key][x->to_key]);
+    sum2 += temp_difference * temp_difference;
+  }
+  sum2 = sum2 / (x->division_counter[x->from_key][x->to_key] - 1);
+  float temp_stdev = sqrt(sum2);
+  x->stdevs[x->from_key][x->to_key] = temp_stdev;
+}
+
+
 void newtyper_viterbi(t_newtyper * x){
 
-  int i, j, k;
-  int max_state, max_row_state;                      //max_row_state is used to track the best viterbi path backwards
-  float temp_max_score, max_score, temp_max_score_2, max_row_score, zscore;
-
-  max_score = 0;
-  max_state = 0;
-  temp_max_score = 0;
+  float max_score; // maximum score for a transition between keys (initial * transition * emission).
+  int max_state; // the key letter (int) of the second key that yields the max score.
 
   // Initialize tops.  The likelihood that a given letter will start a word
   // is the transition probability of it following a spacebar (ASCII: 32).
-
-  for (i=0; i<NUM_STATES; i++){
-    x->tops[0][i] = x->bigram_table[32][i];
+  // Also initialize paths with the states themselves.
+  for (int starting_prob=0; starting_prob<NUM_STATES; starting_prob++){
+    x->tops[0][starting_prob] = x->bigram_table[32][starting_prob];
+    x->paths[0][starting_prob] = starting_prob;
+    post("x->tops[0][starting_prob] = %f", x->tops[0][starting_prob]);  // looking good.
   }
 
-  /* Iterate through pairs of key states, use the timing to calculate the zscore.
-     "temp_max_score": the total likelihood for a given pair of keys.
-     "max_score": the max temp_max_score of a set of transitions.
-     "max_state": the second key that produced the max_score transition.
-     x->tops: the best possible transition probabilities for timing/transitions.
-     x->paths: the keys that produced the best transitions.
-  */
+  // for each timing observation...
+  for(int observation=0; observation < x->obscount; observation++){
+    // go through the list of states we already have, and have two variables
+    // ready for each.  Also be ready with whatever state is in the paths...
+    for(int letter_one = 0; letter_one < NUM_STATES; letter_one++){
+      //reset max score and state.
+      max_score = 0;
+      max_state = 0;
+      // have the previous emission letter on hand
+      int saved_letter_one = x->paths[observation][letter_one];
 
-  for(i=1;i<x->obscount;i++){
-          for(j=0;j<NUM_STATES;j++){
-                  max_score = 0;
-                  for(k=0;k<NUM_STATES;k++){
-                      zscore = (x->obs[i] - x->means[k][j]) / x->stdevs[k][j];
-                      zscore = sqrt(zscore*zscore);
-                      zscore = ((int) (zscore * 100)) - 1;
-                      if(zscore>389){
-                          zscore = 389;
-                      }
-                      zscore = ztable[(int) zscore];
-                      temp_max_score = x->tops[i-1][k] * x->bigram_table[k][j] * zscore;
-                      if(temp_max_score>max_score){
-                      max_score = temp_max_score;
-                      max_state = k;
-                      }
-          }
-          x->tops[i][j] = max_score;
-          x->paths[i-1][j] = max_state;
+      // and then compare to states we could transition to...
+      for(int potential_letter_two=0; potential_letter_two < NUM_STATES; potential_letter_two++){
+
+        float zscore = (x->obs[observation] - x->means[saved_letter_one][potential_letter_two]) / x->stdevs[saved_letter_one][potential_letter_two];
+        zscore = abs(zscore);
+        zscore = ((int) (zscore * 100)) - 1;
+        post("zscore times 100: %f", zscore);
+        if(zscore > 389){
+          zscore = 389;
         }
+        // if zscore is zero, then it's zero stdevs away from mean, so it's good.
+        zscore = ztable[(int) zscore];
+        zscore = abs((zscore - 0.5));
+
+        float temp_max_score = x->tops[observation][letter_one] * x->bigram_table[saved_letter_one][potential_letter_two] * zscore;
+        if (temp_max_score > max_score){
+          max_score = temp_max_score;
+          max_state = potential_letter_two;
+        }
+      }
+      x->tops[observation+1][letter_one] = max_score;
+      x->paths[observation+1][letter_one] = max_state;
+    }
   }
 
   /*  Whichever row in the last column of x->paths is highest is the row that
       is the highest likelihood path of the observations.  So find it.
   */
 
-    max_row_score = 0;
-    max_row_state = 0;
-    temp_max_score_2 = 0;
+  float max_row_score = 0;
+  int max_row_state = 0;
+  float temp_max_score_2 = 0;
 
-    outlet_float(x->f_out2, x->tops[x->obscount-1][j]);
+  for (int l=0; l<NUM_STATES; l++){
 
-    for(j=0; j<NUM_STATES; j++)
-    {
-      temp_max_score_2 = x->tops[x->obscount-1][j];
-      if(temp_max_score_2 > max_row_score)
-      {
-        max_row_score = temp_max_score_2;
-        max_row_state = j;
-      }
+    temp_max_score_2 = x->tops[x->obscount][l];
+    post("temp_max_score_2 -- %f", temp_max_score_2);
+
+    if(temp_max_score_2 > max_row_score){
+      max_row_score = temp_max_score_2;
+      max_row_state = l;
+      post("Greater!");
     }
+  }
 
-    post("NUMBER OF LETTERS: %d", x->obscount+1);
+  // Then iterate through the whole path row from beginning to end and
+  // print the character-translation of the states.
 
-    // Then iterate through the whole path row from beginning to end and
-    // print the character-translation of the states.
-
-    for(i=x->obscount-1;i>=0;i--){
-      post("LETTER: %c", (char) x->paths[i][max_row_state]);
-      post("float: %f", x->tops[i][max_row_state]);
-      outlet_float(x->x_obj.ob_outlet, (char) x->paths[i][max_row_state]);
-      max_row_state = x->paths[i][max_row_state];
-    }
-
-  outlet_float(x->f_out, (char) max_row_state);
+  for(int m=0; m <= x->obscount; m++){
+    post("LETTER: %i", x->paths[m][max_row_state]);
+    post("float: %f", x->tops[m][max_row_state]);
+  }
   x->obscount = 0;
 }
+
 
 void newtyper_float(t_newtyper * x, float latest_input){
 
@@ -162,35 +187,30 @@ void newtyper_float(t_newtyper * x, float latest_input){
   if ( (latest_input >= NUM_STATES) | (latest_input < 0) ){
     post("Input out of range!");
   }
-  // if the time difference is big, or no key1 value, record new key1 and reset
-  // key2 to 127 (outside NUM_STATES range)
-  else if ( (time_diff > 800) | (x->key2 == 127) ){
-    x->time_then = clock_getsystime();
-    x->key2 = latest_input;
-    x->key1 = 127;
-  }
   // if input is spacebar, do viterbi and reset key values.
   else if ( (int) latest_input == 32){
       post("--word finished --");
       newtyper_viterbi(x);
-      x->key2 = 127;
-      x->key1 = 127;
-    }
+      x->to_key = 127;
+      x->from_key = 127;
+      x->time_then = clock_getsystime();
+  }
+  // if the time difference is big, or no key1 value, record new key1 and reset
+  // key2 to 127 (outside NUM_STATES range)
+  else if (time_diff > 800){
+    x->time_then = clock_getsystime();
+    x->to_key = 127;
+    x->from_key = latest_input;
+  }
   // if first key hasn't been pressed, record it.
-  else if (x->key2 == 127){
-    x->key2 = (t_int) latest_input;
+  else if (x->from_key == 127){
+    x->from_key = (t_int) latest_input;
     x->time_then = clock_getsystime();
   }
+  // when after the first letter of a word.
   else {
 
-    x->key1 = x->key2;
-    x->key2 = (t_int) latest_input;
-
-    float sum1 = 0;
-    float sum2 = 0;
-    float temp_stdev;
-    float temp_mean;
-    int i;
+    x->to_key = (t_int) latest_input;
 
     if (x->obscount >= MAX_NUM_OBSERVATIONS){
       post("Maximum number of letters reached!");
@@ -201,35 +221,25 @@ void newtyper_float(t_newtyper * x, float latest_input){
       x->obscount++;
 
       // put new timing value at next location in timings_table, update location tracker.
-      int index_to_update = x->timings_counter[x->key1][x->key2] % MAX_NUM_TIMINGS;
-      x->timings_table[x->key1][x->key2][index_to_update] = time_diff;
-      x->timings_counter[x->key1][x->key2]++;
+      int index_to_update = x->timings_counter[x->from_key][x->to_key] % MAX_NUM_TIMINGS;
+      x->timings_table[x->from_key][x->to_key][index_to_update] = time_diff;
+      x->timings_counter[x->from_key][x->to_key]++;
 
       // increment division_counter (used for calculating mean)
-      if (x->division_counter[x->key1][x->key2] < MAX_NUM_TIMINGS) {
-        x->division_counter[x->key1][x->key2]++;
+      if (x->division_counter[x->from_key][x->to_key] < MAX_NUM_TIMINGS) {
+        x->division_counter[x->from_key][x->to_key]++;
       }
 
-      // calculate the mean of the timings for the pair of keys.
-      for (i=0; i < x->division_counter[x->key1][x->key2]; i++){
-        sum1 += x->timings_table[x->key1][x->key2][i];
-      }
-      temp_mean = sum1 / x->division_counter[x->key1][x->key2];
-      x->means[x->key1][x->key2] = temp_mean;
+      newtyper_mean(x);
 
-      // calculate the standard deviation.
-      for (i=0; i<x->division_counter[x->key1][x->key2]; i++){
-        float temp_difference = (x->timings_table[x->key1][x->key2][i] - x->means[x->key1][x->key2]);
-        sum2 += temp_difference * temp_difference;
-      }
-      sum2 = sum2 / x->division_counter[x->key1][x->key2];
-      temp_stdev = sqrt(sum2);
-      x->stdevs[x->key1][x->key2] = temp_stdev;
+      newtyper_stdev(x);
 
-      post("%i to %i: %f ms, %f mean, %f stdev.", x->key1, x->key2, time_diff, temp_mean, temp_stdev);
+      post("%c to %c: %f ms, %f mean, %f stdev.", x->from_key, x->to_key, time_diff,
+      x->means[x->from_key][x->to_key], x->stdevs[x->from_key][x->to_key]);
 
       x->time_then = clock_getsystime();
     }
+  x->from_key = x->to_key;
   }
 }
 
@@ -258,7 +268,7 @@ static void newtyper_callback(t_newtyper *x, t_symbol *s){
         break;
       }
       x->second_letter = (int) fgetc(x->myfile);
-      x->bigram_table[x->first_letter][x->second_letter] += 1.0;
+      x->bigram_count_table[x->first_letter][x->second_letter] += 1.0;
       x->first_letter = x->second_letter;
     }
 
@@ -267,11 +277,11 @@ static void newtyper_callback(t_newtyper *x, t_symbol *s){
     for(int i=0;i<NUM_STATES;i++){
       float row_sum = 0;
       for(int j=0;j<NUM_STATES;j++){
-        row_sum += x->bigram_table[i][j];
+        row_sum += x->bigram_count_table[i][j];
       }
       if ( (int) row_sum != 0){
         for (int k=0;k<NUM_STATES;k++){
-          x->bigram_table[i][k] /= row_sum;
+          x->bigram_table[i][k] = x->bigram_count_table[i][k]/row_sum;
         }
       }
     }
@@ -294,18 +304,20 @@ void * newtyper_new(void) {
   x->f_out = outlet_new(&x->x_obj, &s_float);
   x->f_out2 = outlet_new(&x->x_obj, &s_float);
 
-  x->key1 = 127;
-  x->key2 = 127;
+  x->from_key = 127;
+  x->to_key = 127;
 
   // initialize all table values to zero.
   for (int i=0; i<NUM_STATES; i++){
     for (int j=0; j<NUM_STATES; j++){
       x->timings_counter[i][j] = 0;
       x->division_counter[i][j] = 0;
-      x->means[i][j] = 0;
-      x->stdevs[i][j] = 0;
+      x->means[i][j] = 100;
+      x->stdevs[i][j] = 20;
+      x->bigram_count_table[i][j] = 1;
+      x->bigram_table[i][j] = 0.001; // just seeing what happens if I initialize this (and type before uploading text file)
       for (int k=0; k<MAX_NUM_TIMINGS; k++){
-        x->timings_table[i][j][k] = 0;
+        x->timings_table[i][j][k] = 100;
       }
     }
   }
