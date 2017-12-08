@@ -134,24 +134,34 @@ void newtyper_viterbi(t_newtyper * x){
           zscore = 0;
         }
         else{
-          zscore = (x->obs[observation] - x->means[prev_state][letter_two]) / x->stdevs[prev_state][letter_two];
-          zscore = abs(zscore);
-          zscore = ((int) (zscore * 100)) - 1;
+          post("Not zero!");
+          zscore = (fabs(x->obs[observation] - x->means[prev_state][letter_two])) / x->stdevs[prev_state][letter_two];
+          post("Zscore after divide: %f", zscore);
+          zscore = (zscore * 100);
+          post("Zscore after mult: %f", zscore);
+          zscore = (int) zscore;
+          post("Zscore after cast: %f", zscore);
+          zscore = zscore - 1;
+          post("Zscore after minus 1: %f", zscore);
 
           if((int) zscore > 389){
             zscore = 389;
             post("Too big!");
           }
-          else if ( (int) zscore < 0){
+          else if ( (int) zscore <= 0){
             post("Zscore below 0!");
           }
 
           zscore = ztable[(int) zscore];
-          zscore = 2 * abs((zscore - 0.5));
+          post("Zscore after table: %f", zscore);
+          zscore = 2.0 * fabs(zscore - 0.5);
+          post("Zscore after 2* and subtract: %f", zscore);
 
           temp_max_score = x->tops[observation][letter_one] *         // the highest probability previously recorded.
                            x->bigram_table[prev_state][letter_two] *  // the trans prob from highest prev state to potential new state.
                            zscore;                                    // z score of the prev state to potential new state.
+
+          post("Tempmaxscore = %f", temp_max_score);
 
           if (temp_max_score > max_score){
             max_score = temp_max_score;
@@ -191,7 +201,7 @@ void newtyper_viterbi(t_newtyper * x){
 
   post("Max score: %f, Max row: %i", max_row_score, max_row_state);
 
-  for(int m=0; m < x->obscount; m++){
+  for(int m=0; m < x->obscount+1; m++){
     post("LETTERS: %c", (char) x->paths[m][max_row_state]);
     post("float: %f", x->tops[m][max_row_state]);
   }
