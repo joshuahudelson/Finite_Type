@@ -102,7 +102,7 @@ void newtyper_stdev(t_newtyper * x){
     sum += (temp_difference * temp_difference);
   }
   quotient = sum / (x->division_counter[x->from_key][x->to_key] - 1);
-  stdev = sqrt(sum);
+  stdev = sqrt(quotient);
   x->stdevs[x->from_key][x->to_key] = stdev;
 }
 
@@ -111,6 +111,8 @@ void newtyper_viterbi(t_newtyper * x){
   // Calculate the most likely path for the current sequence of timing observations.
   float max_score, temp_max_score, max_row_score, temp_max_row_score;
   int max_state, max_row_state;          // state associated with highest score.
+  float second_max_row_score, third_max_row_score;
+  int second_max_row_state, third_max_row_state;
 
   // Initialize tops scores: likelihood a letter follows spacebar.
   for (int i=0; i<NUM_STATES; i++){
@@ -161,21 +163,49 @@ void newtyper_viterbi(t_newtyper * x){
   }
   //  Find highest value in last column of x->paths.
   max_row_score = 0;
+  second_max_row_score = 0;
+  third_max_row_score = 0;
+
   max_row_state = 0;
+  second_max_row_state = 0;
+  third_max_row_state = 0;
+
   temp_max_row_score = 0;
 
   for (int l=0; l<NUM_STATES; l++){
     temp_max_row_score = x->tops[x->obscount-1][l];
     if(temp_max_row_score > max_row_score){
+
+      third_max_row_score = second_max_row_score;
+      third_max_row_state = second_max_row_state;
+
+      second_max_row_score = max_row_score;
+      second_max_row_state = max_row_state;           // second and third max_row_scores are unnecessary, I think.
+
       max_row_score = temp_max_row_score;
       max_row_state = l;
     }
   }
 
   // Print letters of highest-scoring word (and their scores).
+  post("\n\n");
   for(int m=0; m < x->obscount+1; m++){
     post("%c (%f)", (char) x->paths[m][max_row_state], x->tops[m][max_row_state]);
   }
+
+  post("");
+
+  for(int n=0; n < x->obscount+1; n++){
+    post("%c (%f)", (char) x->paths[n][second_max_row_state], x->tops[n][second_max_row_state]);
+  }
+
+  post("");
+
+  for(int o=0; o < x->obscount+1; o++){
+    post("%c (%f)", (char) x->paths[o][third_max_row_state], x->tops[o][third_max_row_state]);
+  }
+  post("");
+
 }
 
 
